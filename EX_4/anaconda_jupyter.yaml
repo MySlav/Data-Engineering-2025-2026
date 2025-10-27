@@ -1,0 +1,19 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: jupyter-notebook-anaconda
+spec:
+  containers:
+    - name: jupyter-notebook-anaconda
+      image: continuumio/anaconda3
+      ports:
+        - containerPort: 8888
+          hostPort: 8888
+      volumeMounts:
+        - mountPath: /opt/notebooks
+          name: notebook-storage
+      command: ["/bin/bash", "-c", "jupyter notebook --ip=0.0.0.0 --no-browser --allow-root --notebook-dir=/opt/notebooks"]
+  volumes:
+    - name: notebook-storage
+      persistentVolumeClaim:
+        claimName: notebook-storage-pvc
