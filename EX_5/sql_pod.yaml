@@ -1,0 +1,280 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: postgres-pgadmin-pod
+spec:
+  containers:
+    - name: postgres
+      image: postgres:latest
+      env:
+        - name: POSTGRES_USER
+          value: "myuser"
+        - name: POSTGRES_PASSWORD
+          value: "mypassword"
+        - name: POSTGRES_DB
+          value: "mydatabase"
+      volumeMounts:
+        - mountPath: /var/lib/postgresql/data
+          name: postgres-data
+        - mountPath: /docker-entrypoint-initdb.d/init.sql
+          subPath: init.sql
+          name: init-sql
+      ports:
+        - containerPort: 5432 # PostgreSQL internal port
+          hostPort: 5433       # PostgreSQL port on host machine to avoid conflict with local installation
+    - name: pgadmin
+      image: dpage/pgadmin4
+      env:
+        - name: PGADMIN_DEFAULT_EMAIL
+          value: "admin@admin.com"
+        - name: PGADMIN_DEFAULT_PASSWORD
+          value: "admin"
+      volumeMounts:
+        - mountPath: /var/lib/pgadmin
+          name: pgadmin-data
+      ports:
+        - containerPort: 80    # pgAdmin internal port
+          hostPort: 8081       # pgAdmin port on host machine to avoid conflict with local installation
+  volumes:
+    - name: postgres-data
+      persistentVolumeClaim:
+        claimName: postgres-data-pvc
+    - name: pgadmin-data
+      persistentVolumeClaim:
+        claimName: pgadmin-data-pvc
+    - name: init-sql
+      configMap:
+        name: init-sql-config
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: postgres-data-pvc
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: pgadmin-data-pvc
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: init-sql-config
+data:
+  init.sql: |
+    CREATE DATABASE transactional;
+    CREATE DATABASE dwh;
+
+    \connect transactional;
+
+    -- Create Customer table with email uniqueness check
+    CREATE TABLE Customer (
+        IDCustomer SERIAL PRIMARY KEY,
+        name VARCHAR(100) NOT NULL,
+        email VARCHAR(100) NOT NULL UNIQUE, -- Ensure email is unique
+        address TEXT
+    );
+
+    -- Create Product table with price check
+    CREATE TABLE Product (
+        IDProduct SERIAL PRIMARY KEY,
+        product_name VARCHAR(100) NOT NULL,
+        category VARCHAR(100) NOT NULL,
+        price DECIMAL(10, 2) CHECK (price > 0) -- Ensure price is positive
+    );
+
+    -- Create Order table with order date not null check
+    CREATE TABLE CustomerOrder (
+        IDOrder SERIAL PRIMARY KEY,
+        CustomerID INT REFERENCES Customer(IDCustomer),
+        order_date DATE NOT NULL CHECK (order_date <= CURRENT_DATE) -- Ensure the order date is not in the future
+    );
+
+    -- Create OrderItem table with quantity and unit price checks
+    CREATE TABLE OrderItem (
+        IDOrderItem SERIAL PRIMARY KEY,
+        OrderID INT REFERENCES CustomerOrder(IDOrder),
+        ProductID INT REFERENCES Product(IDProduct),
+        quantity INT CHECK (quantity > 0), -- Ensure quantity is positive
+        unit_price DECIMAL(10, 2) CHECK (unit_price >= 0) -- Ensure unit price is non-negative
+    );
+
+    -- Create Payment table with payment amount and method check
+    CREATE TABLE Payment (
+        IDPayment SERIAL PRIMARY KEY,
+        OrderID INT REFERENCES CustomerOrder(IDOrder),
+        payment_date DATE NOT NULL ,
+        payment_method VARCHAR(50) NOT NULL CHECK (payment_method IN ('Credit Card', 'PayPal', 'Bank Transfer')), -- Only allow specific payment methods
+        amount DECIMAL(10, 2) CHECK (amount > 0) -- Ensure payment amount is positive
+    );
+
+    -- Insert customers
+    INSERT INTO Customer (name, email, address)
+    VALUES 
+    ('John Doe', 'john@example.com', '123 Elm St'),
+    ('Jane Smith', 'jane@example.com', '456 Maple Ave'),
+    ('Mike Johnson', 'mike@example.com', '789 Oak Dr');
+
+    -- Insert products
+    INSERT INTO Product (product_name, category, price)
+    VALUES 
+    ('Laptop', 'Electronics', 1200.00),
+    ('Smartphone', 'Electronics', 800.00),
+    ('Tablet', 'Electronics', 300.00),
+    ('Headphones', 'Accessories', 50.00),
+    ('Charger', 'Accessories', 20.00);
+
+    -- Insert orders
+    INSERT INTO CustomerOrder (CustomerID, order_date)
+    VALUES 
+    (1, '2023-10-01'),
+    (2, '2023-10-05'),
+    (1, '2023-10-10');
+
+    -- Insert order items
+    INSERT INTO OrderItem (OrderID, ProductID, quantity, unit_price)
+    VALUES 
+    (1, 1, 1, 1200.00), -- John orders 1 Laptop
+    (1, 5, 2, 20.00),  -- John orders 2 Chargers
+    (2, 2, 1, 800.00), -- Jane orders 1 Smartphone
+    (3, 3, 1, 300.00), -- John orders 1 Tablet
+    (3, 4, 1, 50.00);  -- John orders 1 Headphones
+
+    -- Insert payments
+    INSERT INTO Payment (OrderID, payment_date, payment_method, amount)
+    VALUES 
+    (1, '2023-10-02', 'Credit Card', 1240.00),
+    (2, '2023-10-06', 'PayPal', 800.00),
+    (3, '2023-10-11', 'Credit Card', 350.00);
+
+    commit;
+    
+    \connect dwh;
+    
+    -- Create Dimension Tables for the Data Warehouse
+
+    -- Create DimCustomer table
+    CREATE TABLE DimCustomer (
+        IDCustomer INT PRIMARY KEY,
+        customer_name VARCHAR(100),
+        email VARCHAR(100),
+        address TEXT
+    );
+
+    -- Create DimProduct table
+    CREATE TABLE DimProduct (
+        IDProduct INT PRIMARY KEY,
+        product_name VARCHAR(100),
+        category VARCHAR(100)
+    );
+
+    -- Create FactSale table (denormalized)
+    CREATE TABLE FactSale (
+        IDOrder INT PRIMARY KEY,
+        CustomerID INT REFERENCES DimCustomer(IDCustomer),
+        total_order_amount DECIMAL(10, 2),
+        total_quantity INT,
+        order_date DATE,
+        ProductID INT REFERENCES DimProduct(IDProduct),
+        payment_method VARCHAR(50)
+    );
+
+    -- Date Dimension
+    
+    CREATE TABLE DimDate
+    (
+      IDDimDate               INT NOT NULL,
+      date_actual              DATE NOT NULL,
+      epoch                    BIGINT NOT NULL,
+      day_suffix               VARCHAR(4) NOT NULL,
+      day_name                 VARCHAR(9) NOT NULL,
+      day_of_week              INT NOT NULL,
+      day_of_month             INT NOT NULL,
+      day_of_quarter           INT NOT NULL,
+      day_of_year              INT NOT NULL,
+      week_of_month            INT NOT NULL,
+      week_of_year             INT NOT NULL,
+      week_of_year_iso         CHAR(10) NOT NULL,
+      month_actual             INT NOT NULL,
+      month_name               VARCHAR(9) NOT NULL,
+      month_name_abbreviated   CHAR(3) NOT NULL,
+      quarter_actual           INT NOT NULL,
+      quarter_name             VARCHAR(9) NOT NULL,
+      year_actual              INT NOT NULL,
+      first_day_of_week        DATE NOT NULL,
+      last_day_of_week         DATE NOT NULL,
+      first_day_of_month       DATE NOT NULL,
+      last_day_of_month        DATE NOT NULL,
+      first_day_of_quarter     DATE NOT NULL,
+      last_day_of_quarter      DATE NOT NULL,
+      first_day_of_year        DATE NOT NULL,
+      last_day_of_year         DATE NOT NULL,
+      mmyyyy                   CHAR(6) NOT NULL,
+      mmddyyyy                 CHAR(10) NOT NULL,
+      weekend_indr             BOOLEAN NOT NULL
+    );
+
+    ALTER TABLE public.DimDate ADD CONSTRAINT DimDate_IDDimDate_pk PRIMARY KEY (IDDimDate);
+
+    CREATE INDEX DimDate_date_actual_idx
+      ON DimDate(date_actual);
+
+    COMMIT;
+
+    INSERT INTO DimDate
+    SELECT TO_CHAR(datum, 'yyyymmdd')::INT AS IDDimDate,
+           datum AS date_actual,
+           EXTRACT(EPOCH FROM datum) AS epoch,
+           TO_CHAR(datum, 'fmDDth') AS day_suffix,
+           TO_CHAR(datum, 'TMDay') AS day_name,
+           EXTRACT(ISODOW FROM datum) AS day_of_week,
+           EXTRACT(DAY FROM datum) AS day_of_month,
+           datum - DATE_TRUNC('quarter', datum)::DATE + 1 AS day_of_quarter,
+           EXTRACT(DOY FROM datum) AS day_of_year,
+           TO_CHAR(datum, 'W')::INT AS week_of_month,
+           EXTRACT(WEEK FROM datum) AS week_of_year,
+           EXTRACT(ISOYEAR FROM datum) || TO_CHAR(datum, '"-W"IW-') || EXTRACT(ISODOW FROM datum) AS week_of_year_iso,
+           EXTRACT(MONTH FROM datum) AS month_actual,
+           TO_CHAR(datum, 'TMMonth') AS month_name,
+           TO_CHAR(datum, 'Mon') AS month_name_abbreviated,
+           EXTRACT(QUARTER FROM datum) AS quarter_actual,
+           CASE
+               WHEN EXTRACT(QUARTER FROM datum) = 1 THEN 'First'
+               WHEN EXTRACT(QUARTER FROM datum) = 2 THEN 'Second'
+               WHEN EXTRACT(QUARTER FROM datum) = 3 THEN 'Third'
+               WHEN EXTRACT(QUARTER FROM datum) = 4 THEN 'Fourth'
+               END AS quarter_name,
+           EXTRACT(YEAR FROM datum) AS year_actual,
+           datum + (1 - EXTRACT(ISODOW FROM datum))::INT AS first_day_of_week,
+           datum + (7 - EXTRACT(ISODOW FROM datum))::INT AS last_day_of_week,
+           datum + (1 - EXTRACT(DAY FROM datum))::INT AS first_day_of_month,
+           (DATE_TRUNC('MONTH', datum) + INTERVAL '1 MONTH - 1 day')::DATE AS last_day_of_month,
+           DATE_TRUNC('quarter', datum)::DATE AS first_day_of_quarter,
+           (DATE_TRUNC('quarter', datum) + INTERVAL '3 MONTH - 1 day')::DATE AS last_day_of_quarter,
+           TO_DATE(EXTRACT(YEAR FROM datum) || '-01-01', 'YYYY-MM-DD') AS first_day_of_year,
+           TO_DATE(EXTRACT(YEAR FROM datum) || '-12-31', 'YYYY-MM-DD') AS last_day_of_year,
+           TO_CHAR(datum, 'mmyyyy') AS mmyyyy,
+           TO_CHAR(datum, 'mmddyyyy') AS mmddyyyy,
+           CASE
+               WHEN EXTRACT(ISODOW FROM datum) IN (6, 7) THEN TRUE
+               ELSE FALSE
+               END AS weekend_indr
+    FROM (SELECT '1970-01-01'::DATE + SEQUENCE.DAY AS datum
+          FROM GENERATE_SERIES(0, 29219) AS SEQUENCE (DAY)
+          GROUP BY SEQUENCE.DAY) DQ
+    ORDER BY 1;
+
+
+    COMMIT;
