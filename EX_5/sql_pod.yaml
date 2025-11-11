@@ -3,6 +3,8 @@ kind: Pod
 metadata:
   name: postgres-pgadmin-pod
 spec:
+  securityContext:
+    fsGroup: 999
   containers:
     - name: postgres
       image: postgres:latest
@@ -14,14 +16,14 @@ spec:
         - name: POSTGRES_DB
           value: "mydatabase"
       volumeMounts:
-        - mountPath: /var/lib/postgresql/data
+        - mountPath: /var/lib/postgresql
           name: postgres-data
         - mountPath: /docker-entrypoint-initdb.d/init.sql
           subPath: init.sql
           name: init-sql
       ports:
         - containerPort: 5432 # PostgreSQL internal port
-          hostPort: 5433       # PostgreSQL port on host machine to avoid conflict with local installation
+          hostPort: 5433 # PostgreSQL port on host machine to avoid conflict with local installation
     - name: pgadmin
       image: dpage/pgadmin4
       env:
@@ -33,12 +35,12 @@ spec:
         - mountPath: /var/lib/pgadmin
           name: pgadmin-data
       ports:
-        - containerPort: 80    # pgAdmin internal port
-          hostPort: 8081       # pgAdmin port on host machine to avoid conflict with local installation
+        - containerPort: 80 # pgAdmin internal port
+          hostPort: 8081 # pgAdmin port on host machine to avoid conflict with local installation
   volumes:
     - name: postgres-data
       persistentVolumeClaim:
-        claimName: postgres-data-pvc
+        claimName: postgres18-data-pvc
     - name: pgadmin-data
       persistentVolumeClaim:
         claimName: pgadmin-data-pvc
@@ -49,7 +51,7 @@ spec:
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
-  name: postgres-data-pvc
+  name: postgres18-data-pvc
 spec:
   accessModes:
     - ReadWriteOnce
@@ -160,9 +162,9 @@ data:
     (3, '2023-10-11', 'Credit Card', 350.00);
 
     commit;
-    
+
     \connect dwh;
-    
+
     -- Create Dimension Tables for the Data Warehouse
 
     -- Create DimCustomer table
@@ -192,7 +194,7 @@ data:
     );
 
     -- Date Dimension
-    
+
     CREATE TABLE DimDate
     (
       IDDimDate               INT NOT NULL,
