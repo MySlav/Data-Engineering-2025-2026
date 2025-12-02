@@ -7,7 +7,7 @@ spec:
     fsGroup: 999
   containers:
     - name: postgres
-      image: postgres:latest
+      image: postgres:18
       env:
         - name: POSTGRES_USER
           value: "myuser"
