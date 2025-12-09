@@ -142,6 +142,13 @@ INSERT INTO ex_employee (full_name, email) VALUES
 ----------------------------------------------------------------------
 -- 2. TASKS: JOINS
 ----------------------------------------------------------------------
+SELECT * FROM employee
+WHERE dept_id IS NULL 
+;
+INSERT INTO employee
+VALUES  (8, 'Đuro', NULL, NULL, '2025-10-01', 10000000)
+
+SELECT * FROM employee_project
 
 /*
 TASK J1 
@@ -173,7 +180,7 @@ SELECT
 FROM employee_project ep
 JOIN employee e   ON e.emp_id = ep.emp_id
 JOIN project p    ON p.proj_id = ep.proj_id
-JOIN department d ON d.dept_id = p.dept_id
+LEFT JOIN department d ON d.dept_id = p.dept_id
 ORDER BY p.proj_name, e.emp_name;
 
 -- J2
@@ -188,6 +195,11 @@ LEFT JOIN project p           ON p.proj_id = ep.proj_id
 ORDER BY e.emp_name;
 
 -- J3 (FULL OUTER JOIN example)
+SELECT * FROM Project;
+
+INSERT INTO Project
+VALUES ( 5,'Data Engineering', 1, '2025-12-08', NULL)
+
 SELECT
     e.emp_name,
     p.proj_name,
@@ -241,11 +253,12 @@ UPDATE employee SET email = LOWER(emp_name) || '@company.com';
 
 
 
+
 --  S1
 SELECT email FROM employee
-UNION
+UNION ALL 
 SELECT email FROM candidate
-UNION
+UNION ALL
 SELECT email FROM ex_employee
 ORDER BY email;
 
@@ -254,6 +267,15 @@ SELECT email, 'candidate'   AS source FROM candidate
 UNION ALL
 SELECT email, 'ex_employee' AS source FROM ex_employee
 ORDER BY email, source;
+
+
+SELECT x.email, COUNT(1) FROM (
+SELECT email, 'candidate'   AS source FROM candidate
+UNION ALL
+SELECT email, 'ex_employee' AS source FROM ex_employee
+) x
+GROUP BY x.email
+ORDER BY x.email
 
 -- S3
 SELECT email
@@ -308,6 +330,17 @@ FROM (
 ) AS dept_stats
 WHERE avg_salary > 55000;
 
+-- 2nd solution
+SELECT
+d.dept_name,
+COUNT(e.emp_id)      AS emp_count,
+AVG(e.salary)        AS avg_salary
+FROM department d
+LEFT JOIN employee e ON e.dept_id = d.dept_id
+GROUP BY d.dept_name
+HAVING AVG(e.salary) > 55000;
+
+
 -- Q3
 SELECT
     e.emp_name,
@@ -319,7 +352,7 @@ SELECT
 FROM employee e
 ORDER BY e.emp_name;
 
--- Q4 (correlated in HAVING)
+-- Q4 (correlated in WHERE)
 SELECT e.emp_name
 FROM employee e
 WHERE (
@@ -331,6 +364,7 @@ WHERE (
 ----------------------------------------------------------------------
 -- 5. TASKS: PIVOT / CROSSTAB (PostgreSQL tablefunc)
 ----------------------------------------------------------------------
+
 
 -- Enable extension (once per DB)
 CREATE EXTENSION IF NOT EXISTS tablefunc;
@@ -356,7 +390,7 @@ JOIN department d ON d.dept_id = e.dept_id
 GROUP BY d.dept_name, ep.role
 ORDER BY d.dept_name, ep.role;
 
---  P1
+--  P1 -- not good because of ordering of categories !!!!
 SELECT *
 FROM crosstab(
     $$
@@ -378,6 +412,32 @@ FROM crosstab(
     Coordinator_hours int,
     Developer_hours int
 );
+-- safe solution to use 4 argument crosstab
+SELECT *
+FROM crosstab(
+    $$
+    SELECT
+        d.dept_name::text,
+        ep.role::text,
+        SUM(ep.hours)::int AS total_hours
+    FROM employee_project ep
+    JOIN employee e   ON e.emp_id = ep.emp_id
+    JOIN department d ON d.dept_id = e.dept_id
+    GROUP BY d.dept_name, ep.role
+    ORDER BY d.dept_name, ep.role
+    $$,
+    $$
+    SELECT unnest(ARRAY['Lead','Analyst','Architect','Coordinator','Developer'])
+    $$
+) AS ct(
+    dept_name          text,
+    Lead_hours         int,
+    Analyst_hours      int,
+    Architect_hours    int,
+    Coordinator_hours  int,
+    Developer_hours    int
+);
+
 ----------------------------------------------------------------------
 -- 6. TASKS: CTEs (non-recursive)
 ----------------------------------------------------------------------
@@ -439,6 +499,16 @@ TASK R2
 Using a RECURSIVE CTE, for a single department head (e.g. Alice in IT),
 list all people in their management chain (all levels below them).
 */
+
+SELECT * FROM employee
+;
+UPDATE employee
+SET manager_id = 8
+WHERE emp_id = 1
+
+UPDATE employee
+SET dept_id = 1
+WHERE emp_id = 8
 
 
 -- SAMPLE SOLUTION R1

@@ -279,23 +279,31 @@ SELECT * FROM customer_payment ORDER BY customer_name, payment_method;
 --   We explicitly declare the resulting columns and types.
 SELECT *
 FROM crosstab(
-        $$
-        SELECT
-            c.name::text        AS customer_name,
-            p.payment_method::text,
-            SUM(p.amount)::numeric
-        FROM Payment p
-        JOIN CustomerOrder o ON o.IDOrder = p.OrderID
-        JOIN Customer c       ON c.IDCustomer = o.CustomerID
-        GROUP BY c.name, p.payment_method
-        ORDER BY c.name, p.payment_method
-        $$)
-AS ct (
-    customer_name      text,
-    credit_card_total  numeric,
-    paypal_total       numeric,
-    bank_transfer_total numeric
+    $$
+    SELECT
+        c.name::text        AS customer_name,
+        p.payment_method::text,
+        SUM(p.amount)::numeric
+    FROM Payment p
+    JOIN CustomerOrder o ON o.IDOrder = p.OrderID
+    JOIN Customer c       ON c.IDCustomer = o.CustomerID
+    GROUP BY c.name, p.payment_method
+    ORDER BY c.name, p.payment_method
+    $$,
+    $$
+    SELECT unnest(ARRAY[
+        'Credit Card',
+        'PayPal',
+        'Bank Transfer'
+    ]::text[])
+    $$
+) AS ct (
+    customer_name        text,
+    credit_card_total    numeric,
+    paypal_total         numeric,
+    bank_transfer_total  numeric
 );
+
 
 
 /**********************************************************************
