@@ -12,7 +12,6 @@ GO
 IF OBJECT_ID('tempdb..#stage') IS NOT NULL DROP TABLE #stage;
 CREATE TABLE #stage
 (
-
 	[Country] NVARCHAR(4000),
 	[Year] NVARCHAR(4000),
 	[Rank] NVARCHAR(4000),
@@ -32,12 +31,12 @@ CREATE TABLE #stage
 );
 
 BULK INSERT #stage
-FROM 'C:\FSI-2023-DOWNLOAD.csv'
+FROM 'C:\fsi.csv'
 WITH (
     FIRSTROW = 2,                 -- header is row 1
     FIELDTERMINATOR = ';',
     ROWTERMINATOR = '0x0a',       -- <-- LF
-    CODEPAGE = '65001',
+    CODEPAGE = '65001', 
     TABLOCK,
     KEEPNULLS
 );
@@ -46,6 +45,7 @@ select * from #stage;
 
 CREATE TABLE [dbo].[FSI-2023](
 RN INT IDENTITY(1,1),
+
 	[Country] [varchar](50) NULL,
 	[Year] [varchar](50) NULL,
 	[Rank] [varchar](50) NULL,
@@ -62,6 +62,7 @@ RN INT IDENTITY(1,1),
 	[C1  Security Apparatus] [decimal](18, 2)  NULL,
 	[C2  Factionalized Elites] [decimal](18, 2) NULL,
 	[X1  External Intervention] [decimal](18, 2)  NULL
+
 ) ON [PRIMARY]
 GO
 ;
@@ -106,12 +107,22 @@ SELECT
     TRY_CAST(REPLACE(REPLACE(REPLACE(NULLIF(s.[X1  External Intervention], ''), '.', ''), ' ', ''), ',', '.') AS DECIMAL(18,2)) AS [X1  External Intervention]
 FROM #stage AS s;
 
-
 SELECT * FROM [dbo].[FSI-2023]
+order by RN
+;
+
+
+SELECT Country,Rank FROM [dbo].[FSI-2023]
 
 WHERE RN =( SELECT MIN(RN) FROM  [dbo].[FSI-2023])
 OR RN =( SELECT MAX(RN) FROM  [dbo].[FSI-2023])
 ;
+
+SELECT * from (Select top 1  fsi.Country, fsi.Rank  from [dbo].[FSI-2023] as fsi
+order by Total desc) as FirstPlace
+UNION ALL
+select * from (Select top 1  fsi.Country, fsi.Rank  from [dbo].[FSI-2023] as fsi
+order by total asc) as LastPlace
 
 
 
@@ -122,9 +133,16 @@ WITH R AS (
          ) AS RankNum
   FROM [dbo].[FSI-2023]
 )
-SELECT TOP (1) WITH TIES *
-FROM R
-ORDER BY RankNum ASC;  -- first (smallest rank)
--- DESC
--- and for the last (largest rank)
+select * from r
+where [S1  Demographic Pressures] <7
+SELECT * from (Select top 1  fsi.Country, fsi.Rank  from R fsi
+order by RankNum desc) as FirstPlace
+UNION ALL
+select * from (Select top 1  fsi.Country, fsi.Rank  from R fsi
+order by RankNum asc) as LastPlace
 
+select * from 
+
+SELECT * FROM Employee
+WHERE Salary != NULL
+;
